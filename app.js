@@ -1,33 +1,45 @@
 const http = require('http');
-const { BlobServiceClient, StorageSharedKeyCredential } = require('@azure/storage-blob');
+const { BlobServiceClient } = require('@azure/storage-blob');
 const { MongoClient } = require('mongodb');
-
-// Your Azure Blob Storage account details
-const accountName = '<your-account-name>';
-const accountKey = 'BlobEndpoint=
-const containerName = 'blobby'; // Replace with your container name
+const { Readable } = require('stream');
 
 // Your MongoDB connection URI
-const mongoUri =  // Replace with your MongoDB URI
+const mongoUri =  process.env.MONGO_URI; // Replace with your connection string
 
-// Initialize a StorageSharedKeyCredential with your storage account name and account key
-const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+// Your Azure Blob Storage account details
+const accountName = process.env.ACCOUNT_NAME; // Replace with your account name
+const sasToken = process.env.SAS_TOKEN; // Replace with your SAS token
+const containerName = 'blobby'; // Replace with your container name
 
-// Initialize the BlobServiceClient with the shared key credential
-const blobServiceClient = new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, sharedKeyCredential);
+// Initialize the BlobServiceClient with the SAS token
+const blobServiceClient = new BlobServiceClient(`https://${accountName}.blob.core.windows.net/?${sasToken}`);
 
 // Create a container client to interact with the container
 const containerClient = blobServiceClient.getContainerClient(containerName);
 
-// Function to upload an image to Azure Blob Storage
-async function uploadImage(name, fileType, data) {
+// Function to upload an image to Azure Blob Storage using streams
+async function uploadImageStreamed(name, fileType, dataStream, contentType) {
   const blobName = `${name}.${fileType}`;
   const blobClient = containerClient.getBlockBlobClient(blobName);
+  const options = {
+    blobHTTPHeaders: {
+      blobContentType: contentType
+    }
+  };
 
-  // Upload the image data to Azure Blob Storage
-  await blobClient.upload(data, data.length);
+  // Upload the image data to Azure Blob Storage using a stream
+  await blobClient.uploadStream(dataStream, undefined, undefined, options);
 
   return blobClient.url;
+}
+
+// Convert base64 string to stream
+function base64ToStream(base64String) {
+  const buffer = Buffer.from(base64String, 'base64');
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null); // EOF
+  return stream;
 }
 
 // Function to store metadata in MongoDB
@@ -69,11 +81,11 @@ async function handleImageUpload(req, res) {
 
       req.on('end', async () => {
         try {
-          // Parse the JSON data from the request body
           const { name, caption, fileType, data } = JSON.parse(body);
-
-          // Upload the image to Azure Blob Storage
-          const imageUrl = await uploadImage(name, fileType, Buffer.from(data, 'base64'));
+          const dataStream = base64ToStream(data);
+      
+          const contentType = `image/${fileType}`;
+          const imageUrl = await uploadImageStreamed(name, fileType, dataStream, contentType);      
 
           // Store metadata in MongoDB
           await storeMetadata(name, caption, fileType, imageUrl);
@@ -87,11 +99,12 @@ async function handleImageUpload(req, res) {
           res.end(JSON.stringify({ error: 'Invalid request data' }));
         }
       });
-    } else {
+    } 
+    else {
       // Handle other API routes or 404 Not Found
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not Found' }));
-    }
+    } 
   } catch (error) {
     console.error('Error:', error);
     
