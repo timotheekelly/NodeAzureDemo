@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@azure/storage-blob": "^12.16.0",
+    "dotenv": "^16.3.1",
     "mongodb": "^6.2.0"
   }
 }

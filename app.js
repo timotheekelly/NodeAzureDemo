@@ -2,6 +2,7 @@ const http = require('http');
 const { BlobServiceClient } = require('@azure/storage-blob');
 const { MongoClient } = require('mongodb');
 const { Readable } = require('stream');
+require('dotenv').config(); // Load environment variables from .env file
 
 // Your MongoDB connection URI
 const mongoUri =  process.env.MONGO_URI; // Replace with your connection string
@@ -120,5 +121,6 @@ const server = http.createServer(handleImageUpload);
 // Set the server to listen on port 3000
 const port = 3000;
 server.listen(port, () => {
+  console.log(process.env); 
   console.log(`Server listening on port ${port}`);
 });
