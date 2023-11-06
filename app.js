@@ -11,9 +11,8 @@ const containerName = process.env.CONTAINER_NAME;
 const blobServiceClient = new BlobServiceClient(`https://${accountName}.blob.core.windows.net/?${sasToken}`);
 const containerClient = blobServiceClient.getContainerClient(containerName);
 
-async function uploadImageStreamed(blobName, dataStream, contentType) {
+async function uploadImageStreamed(blobName, dataStream) {
   const blobClient = containerClient.getBlockBlobClient(blobName);
-  const options = { blobHTTPHeaders: { blobContentType: contentType } };
   await blobClient.uploadStream(dataStream);
   return blobClient.url;
 }
@@ -21,7 +20,7 @@ async function uploadImageStreamed(blobName, dataStream, contentType) {
 async function storeMetadata(name, caption, fileType, imageUrl) {
   const client = new MongoClient(mongoUri);
   await client.connect();
-  const collection = client.db().collection('metadata');
+  const collection = client.db("tutorial").collection('metadata');
   await collection.insertOne({ name, caption, fileType, imageUrl });
   await client.close();
 }
@@ -29,35 +28,28 @@ async function storeMetadata(name, caption, fileType, imageUrl) {
 async function handleImageUpload(req, res) {
   res.setHeader('Content-Type', 'application/json');
   if (req.url === '/api/upload' && req.method === 'POST') {
-    let body = [];
-    req.on('data', (chunk) => {
-      body.push(chunk);
-    }).on('end', async () => {
-      try {
-        // Combine the chunks and convert to a Buffer
-        body = Buffer.concat(body);
-        // Here we would need to determine the file type and name from the content-type and content-disposition headers
-        const contentType = req.headers['content-type'];
-        const contentDisposition = req.headers['content-disposition'] || '';
-        const matches = /filename="([^"]+)"/.exec(contentDisposition);
-        const filename = (matches && matches[1]) || `image-${Date.now()}`;
-        
-        // Assume the fileType from the content-type header
-        const fileType = contentType.split('/')[1];
+    try {
+      // Extract metadata from headers
+      const contentType = req.headers['content-type'];
+      const contentDisposition = req.headers['content-disposition'] || '';
+      const caption = req.headers['x-image-caption'] || 'No caption provided';
+      const matches = /filename="([^"]+)"/.exec(contentDisposition);
+      const filename = (matches && matches[1]) || `image-${Date.now()}`;
+      const fileType = contentType.split('/')[1];
 
-        const imageUrl = await uploadImageStreamed(filename, body, contentType);
+      // Upload the image as a stream
+      const imageUrl = await uploadImageStreamed(filename, req);
 
-        // Store the metadata in MongoDB
-        await storeMetadata(filename, 'Uploaded Image', fileType, imageUrl);
+      // Store the metadata in MongoDB
+      await storeMetadata(filename, caption, fileType, imageUrl);
 
-        res.writeHead(201);
-        res.end(JSON.stringify({ message: 'Image uploaded and metadata stored successfully', imageUrl }));
-      } catch (error) {
-        console.error('Error:', error);
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Internal Server Error' }));
-      }
-    });
+      res.writeHead(201);
+      res.end(JSON.stringify({ message: 'Image uploaded and metadata stored successfully', imageUrl }));
+    } catch (error) {
+      console.error('Error:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'Internal Server Error' }));
+    }
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not Found' }));
