@@ -44,7 +44,7 @@ async function handleImageUpload(req, res) {
       const matches = /filename="([^"]+)"/.exec(contentDisposition);
       const filename = matches?.[1] || `image-${Date.now()}.${fileType}`;
 
-      // Upload the image as a stream
+      // Upload the image as a to Azure Storage Blob as a stream
       const imageUrl = await uploadImageStreamed(filename, req);
 
       // Store the metadata in MongoDB
