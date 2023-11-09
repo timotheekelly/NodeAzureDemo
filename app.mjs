@@ -1,16 +1,24 @@
-const http = require('http');
-const { BlobServiceClient } = require('@azure/storage-blob');
-const { MongoClient } = require('mongodb');
-require('dotenv').config();
+import http from 'http';
+import { BlobServiceClient } from '@azure/storage-blob';
+import { MongoClient } from 'mongodb';
+import 'dotenv/config';
 
-const mongoUri = process.env.MONGO_URI;
+
+// Load in environment variables
+const mongodbUri = process.env.MONGODB_URI;
 const accountName = process.env.ACCOUNT_NAME;
 const sasToken = process.env.SAS_TOKEN;
 const containerName = process.env.CONTAINER_NAME;
 
+// Establishes a connection with Azure Blob Storage
 const blobServiceClient = new BlobServiceClient(`https://${accountName}.blob.core.windows.net/?${sasToken}`);
 const containerClient = blobServiceClient.getContainerClient(containerName);
 
+// Connect to MongoDB
+const client = new MongoClient(mongodbUri);
+client.connect();
+
+// Upload the image to Azure Blob Storage
 async function uploadImageStreamed(blobName, dataStream) {
   const blobClient = containerClient.getBlockBlobClient(blobName);
   await blobClient.uploadStream(dataStream);
@@ -18,12 +26,11 @@ async function uploadImageStreamed(blobName, dataStream) {
 }
 
 async function storeMetadata(name, caption, fileType, imageUrl) {
-  const client = new MongoClient(mongoUri);
-  await client.connect();
   const collection = client.db("tutorial").collection('metadata');
   await collection.insertOne({ name, caption, fileType, imageUrl });
   await client.close();
 }
+
 
 async function handleImageUpload(req, res) {
   res.setHeader('Content-Type', 'application/json');
@@ -31,11 +38,11 @@ async function handleImageUpload(req, res) {
     try {
       // Extract metadata from headers
       const contentType = req.headers['content-type'];
+      const fileType = contentType.split('/')[1];
       const contentDisposition = req.headers['content-disposition'] || '';
       const caption = req.headers['x-image-caption'] || 'No caption provided';
       const matches = /filename="([^"]+)"/.exec(contentDisposition);
-      const filename = (matches && matches[1]) || `image-${Date.now()}`;
-      const fileType = contentType.split('/')[1];
+      const filename = matches?.[1] || `image-${Date.now()}.${fileType}`;
 
       // Upload the image as a stream
       const imageUrl = await uploadImageStreamed(filename, req);
